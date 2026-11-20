@@ -4,6 +4,7 @@ local GITHUB_PAT      = "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"
 local SCRIPT_URL      = "https://raw.githubusercontent.com/Sl1wed/asyncV4/refs/heads/main/asyncV4.lua"
 
 local RAW_BASE = "https://raw.githubusercontent.com/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/main/keys/"
+local API_BASE = "https://api.github.com/repos/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/contents/keys/"
 
 local httpRequest = (syn and syn.request) or http_request or request or fluxus_request
 if not httpRequest then error("[KeyGate] unsupported executor") end
@@ -12,6 +13,22 @@ local httpSvc = game:GetService("HttpService")
 local function safeHTTP(opts)
     local ok, res = pcall(httpRequest, opts)
     return (ok and res) or nil
+end
+
+local function b64enc(data)
+    local b = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    return ((data:gsub(".", function(x)
+        local r, byte = "", x:byte()
+        for i = 8, 1, -1 do
+            r = r .. (byte % 2^i - byte % 2^(i-1) > 0 and "1" or "0")
+        end
+        return r
+    end) .. "0000"):gsub("%d%d%d?%d?%d?%d?", function(x)
+        if #x < 6 then return "" end
+        local c = 0
+        for i = 1, 6 do c = c + (x:sub(i,i) == "1" and 2^(6-i) or 0) end
+        return b:sub(c+1, c+1)
+    end) .. ({"", "==", "="})[#data % 3 + 1])
 end
 
 local function getHWID()
@@ -43,25 +60,68 @@ end
 
 local function trim(s) return s and s:match("^%s*(.-)%s*$") or "" end
 
+-- check if key file exists
+local function keyExists(key)
+    local res = safeHTTP({
+        Url    = RAW_BASE .. key .. ".txt",
+        Method = "GET",
+    })
+    return res and res.StatusCode == 200
+end
+
+-- read stored HWID and IP from file
 local function fetchEntry(key)
     local res = safeHTTP({
         Url    = RAW_BASE .. key .. ".txt",
         Method = "GET",
     })
-    warn("[KeyGate] fetch status: " .. tostring(res and res.StatusCode))
     if not res or res.StatusCode ~= 200 then return nil end
     local lines = {}
     for line in res.Body:gmatch("[^\r\n]+") do
         lines[#lines + 1] = trim(line)
     end
-    warn("[KeyGate] file line1: " .. tostring(lines[1]))
-    warn("[KeyGate] file line2: " .. tostring(lines[2]))
-    warn("[KeyGate] file line3: " .. tostring(lines[3]))
     return lines
 end
 
+-- write HWID and IP into existing key file
+local function fillEntry(key, hwid, ip)
+    local apiUrl  = API_BASE .. key .. ".txt"
+    local content = key .. "\n" .. ip .. "\n" .. hwid
+    local b64     = b64enc(content)
+
+    local existing = safeHTTP({
+        Url     = apiUrl,
+        Method  = "GET",
+        Headers = {
+            Authorization  = "token " .. GITHUB_PAT,
+            ["User-Agent"] = "AsyncCC-KeyGate",
+        },
+    })
+
+    local sha = nil
+    if existing and existing.StatusCode == 200 then
+        local ok, t = pcall(function() return httpSvc:JSONDecode(existing.Body) end)
+        if ok and t then sha = t.sha end
+    end
+
+    if not sha then return false end
+
+    local payload = { message = "fill: " .. key, content = b64, sha = sha }
+
+    local res = safeHTTP({
+        Url     = apiUrl,
+        Method  = "PUT",
+        Headers = {
+            Authorization    = "token " .. GITHUB_PAT,
+            ["User-Agent"]   = "AsyncCC-KeyGate",
+            ["Content-Type"] = "application/json",
+        },
+        Body = httpSvc:JSONEncode(payload),
+    })
+    return res and (res.StatusCode == 200 or res.StatusCode == 201)
+end
+
 local function kick(reason)
-    warn("[KeyGate] " .. reason)
     game:GetService("Players").LocalPlayer:Kick("[AsyncCC] " .. reason)
 end
 
@@ -89,17 +149,12 @@ end
 
 local key = getKey()
 if not key or #key < 4 then
-    kick("No key provided.")
+    kick("Invalid key.")
     return
 end
 
-warn("[KeyGate] validating key: " .. key)
-
 local hwid = getHWID()
 local ip   = getIP()
-
-warn("[KeyGate] HWID: " .. hwid)
-warn("[KeyGate] IP: " .. ip)
 
 local entry = fetchEntry(key)
 
@@ -112,24 +167,27 @@ local storedKey  = entry[1] or ""
 local storedIP   = entry[2] or ""
 local storedHWID = entry[3] or ""
 
-warn("[KeyGate] storedKey: " .. storedKey)
-warn("[KeyGate] storedIP: " .. storedIP)
-warn("[KeyGate] storedHWID: " .. storedHWID)
-
-if storedKey ~= key then
-    kick("Invalid key.")
-    return
+-- file is empty/unfilled: lock it to this user
+if storedIP == "" and storedHWID == "" then
+    local ok = fillEntry(key, hwid, ip)
+    if not ok then
+        kick("Failed to activate key. DM Sl1wed.")
+        return
+    end
+else
+    if storedKey ~= key then
+        kick("Invalid key.")
+        return
+    end
+    if storedHWID ~= hwid then
+        kick("HWID mismatch. DM Sl1wed to reset.")
+        return
+    end
+    if storedIP ~= ip then
+        kick("IP mismatch. DM Sl1wed to reset.")
+        return
+    end
 end
-if storedHWID ~= hwid then
-    kick("HWID mismatch. DM Sl1wed to reset.")
-    return
-end
-if storedIP ~= ip then
-    kick("IP mismatch. DM Sl1wed to reset.")
-    return
-end
-
-warn("[KeyGate] authorised.")
 
 local res = safeHTTP({ Url = SCRIPT_URL, Method = "GET" })
 if not res or res.StatusCode ~= 200 or not res.Body or #res.Body < 10 then
@@ -143,5 +201,4 @@ if not fn then
     return
 end
 
-warn("[KeyGate] loaded.")
 fn()
