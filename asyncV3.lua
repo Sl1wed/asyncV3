@@ -1,6 +1,6 @@
 local GITHUB_USER = "Sl1wed"
 local GITHUB_REPO = "asynccc-keys"
-local GITHUB_PAT  = "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"
+local GITHUB_PAT  = "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"
 local SCRIPT_URL  = "https://raw.githubusercontent.com/Sl1wed/asyncV4/refs/heads/main/asyncV4.lua"
 
 local RAW_BASE = "https://raw.githubusercontent.com/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/main/keys/"
