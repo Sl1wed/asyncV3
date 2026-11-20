@@ -1,7 +1,7 @@
-local GITHUB_USER     = "Sl1wed"
-local GITHUB_REPO     = "asynccc-keys"  -- FILL: your private repo name
-local GITHUB_PAT      = "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"
-local SCRIPT_URL      = "https://raw.githubusercontent.com/Sl1wed/asyncV4/refs/heads/main/asyncV4.lua"
+local GITHUB_USER = "Sl1wed"
+local GITHUB_REPO = "asynccc-keys"
+local GITHUB_PAT  = "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"
+local SCRIPT_URL  = "https://raw.githubusercontent.com/Sl1wed/asyncV4/refs/heads/main/asyncV4.lua"
 
 local RAW_BASE = "https://raw.githubusercontent.com/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/main/keys/"
 local API_BASE = "https://api.github.com/repos/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/contents/keys/"
@@ -60,16 +60,6 @@ end
 
 local function trim(s) return s and s:match("^%s*(.-)%s*$") or "" end
 
--- check if key file exists
-local function keyExists(key)
-    local res = safeHTTP({
-        Url    = RAW_BASE .. key .. ".txt",
-        Method = "GET",
-    })
-    return res and res.StatusCode == 200
-end
-
--- read stored HWID and IP from file
 local function fetchEntry(key)
     local res = safeHTTP({
         Url    = RAW_BASE .. key .. ".txt",
@@ -83,7 +73,6 @@ local function fetchEntry(key)
     return lines
 end
 
--- write HWID and IP into existing key file
 local function fillEntry(key, hwid, ip)
     local apiUrl  = API_BASE .. key .. ".txt"
     local content = key .. "\n" .. ip .. "\n" .. hwid
@@ -98,11 +87,16 @@ local function fillEntry(key, hwid, ip)
         },
     })
 
+    warn("[KeyGate] SHA fetch status: " .. tostring(existing and existing.StatusCode))
+    warn("[KeyGate] SHA fetch body: " .. tostring(existing and existing.Body))
+
     local sha = nil
     if existing and existing.StatusCode == 200 then
         local ok, t = pcall(function() return httpSvc:JSONDecode(existing.Body) end)
         if ok and t then sha = t.sha end
     end
+
+    warn("[KeyGate] SHA: " .. tostring(sha))
 
     if not sha then return false end
 
@@ -118,6 +112,10 @@ local function fillEntry(key, hwid, ip)
         },
         Body = httpSvc:JSONEncode(payload),
     })
+
+    warn("[KeyGate] PUT status: " .. tostring(res and res.StatusCode))
+    warn("[KeyGate] PUT body: " .. tostring(res and res.Body))
+
     return res and (res.StatusCode == 200 or res.StatusCode == 201)
 end
 
@@ -167,7 +165,6 @@ local storedKey  = entry[1] or ""
 local storedIP   = entry[2] or ""
 local storedHWID = entry[3] or ""
 
--- file is empty/unfilled: lock it to this user
 if storedIP == "" and storedHWID == "" then
     local ok = fillEntry(key, hwid, ip)
     if not ok then
