@@ -45,18 +45,18 @@ local function trim(s) return s and s:match("^%s*(.-)%s*$") or "" end
 
 local function fetchEntry(key)
     local res = safeHTTP({
-        Url     = RAW_BASE .. key .. ".txt",
-        Method  = "GET",
-        Headers = {
-            Authorization  = "token " .. GITHUB_PAT,
-            ["User-Agent"] = "AsyncCC-KeyGate",
-        },
+        Url    = RAW_BASE .. key .. ".txt",
+        Method = "GET",
     })
+    warn("[KeyGate] fetch status: " .. tostring(res and res.StatusCode))
     if not res or res.StatusCode ~= 200 then return nil end
     local lines = {}
     for line in res.Body:gmatch("[^\r\n]+") do
         lines[#lines + 1] = trim(line)
     end
+    warn("[KeyGate] file line1: " .. tostring(lines[1]))
+    warn("[KeyGate] file line2: " .. tostring(lines[2]))
+    warn("[KeyGate] file line3: " .. tostring(lines[3]))
     return lines
 end
 
@@ -87,7 +87,6 @@ local function getKey()
     return nil
 end
 
--- ── gate ───────────────────────────────────────────────────────────────────
 local key = getKey()
 if not key or #key < 4 then
     kick("No key provided.")
@@ -96,8 +95,12 @@ end
 
 warn("[KeyGate] validating key: " .. key)
 
-local hwid  = getHWID()
-local ip    = getIP()
+local hwid = getHWID()
+local ip   = getIP()
+
+warn("[KeyGate] HWID: " .. hwid)
+warn("[KeyGate] IP: " .. ip)
+
 local entry = fetchEntry(key)
 
 if not entry then
@@ -108,6 +111,10 @@ end
 local storedKey  = entry[1] or ""
 local storedIP   = entry[2] or ""
 local storedHWID = entry[3] or ""
+
+warn("[KeyGate] storedKey: " .. storedKey)
+warn("[KeyGate] storedIP: " .. storedIP)
+warn("[KeyGate] storedHWID: " .. storedHWID)
 
 if storedKey ~= key then
     kick("Invalid key.")
